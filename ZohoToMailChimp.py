@@ -1,0 +1,295 @@
+
+FUNCTION main(input InputEmail)
+ 
+DEFINE Account
+DEFINE Emailtmp
+DEFINE Mailchimpstatus
+DEFINE UserData
+DEFINE ZohoTag
+DEFINE TagsResponse
+
+CALL ZohoAccountLogin(sample@gmail.com) AND SET Account 
+
+    IF InputEmail.Email OR InputEmail.Personal_email Exist THEN 
+
+        IF InputEmail.email EXISTS THEN
+            SET Emailtmp as InputEmail.Email 
+        ELSE
+            SET Emailtmp as InputEmail.Personal_email 
+        END IF
+        
+       
+        CALL MailChimpsAccountStatus(Emailtmp) and SET Mailchimpstatus
+        Call CheckEmailAddressComplienceStatus(Mailchimpstatus,Account) and SET FormatedData 
+
+        IF (FormatedData.length>0) THEN
+            
+            CALL fetchIndustryData(InputEmail.contactid,Mailchimpstatus, Account) AND SET UserData
+
+            IF (UserData.length>0) THEN
+
+                CALL AddCreateContactsToMailChimp(UserData) AND SET ZohoTag
+            
+                IF (ZohoTag.length>0) THEN
+
+                    CALL FetchMailchimpsTags(ZohoTag) AND SET TagsResponse
+
+                    IF(TagsResponse.length>0) THEN
+                        
+                        CALL RemoveExcessTags(hashedmail,tagsResponse.tagnames,tagsResponse.tagids,zohoTag) 
+
+                    ELSE 
+
+                        OUTPUT No tags to RemoveExcessTags
+
+                    END IF
+            
+                ELSE
+
+                    OUTPUT ERROR of FetchMailchimpsTags
+
+                END IF
+            ELSE
+                OUTPUT No UserData found
+            END IF
+        ELSE 
+            OUTPUT Error No Subscribe or Cleaned
+        END IF    
+    ELSE 
+        OUTPUT No Email address found
+    END IF
+
+END FUNCTION
+
+
+Step 1
+FUNCTION ZohoAccountLogin(input selected email)  λ
+
+Call ZohoAccount Api Logn
+    
+    Get current API login config
+    Process Login
+    
+    IF ZohoAccount Login success THEN
+        RETURN Account
+    ELSE 
+        RETURN False
+    END IF
+
+END FUNCTION
+
+Step 2
+FUNCTION MailChimpsAccountStatus(input selected email) λ
+
+ 
+    CALL mailchimp API for getting emailstatus passing email
+    SET Mailchimpstatus response of previous API call
+    RETURN Mailchimpstatus
+ 
+    
+END FUNCTION
+
+FUNCTION CheckEmailAddressComplienceStatus(input Mailchimpstatus,Account)
+
+    IF Mailchimpstatus not equal Cleaned AND not equal UnSubscribe THEN
+
+        RETURN Formatted Account.mailing, Account.Zip, Account.street, Account.City, Account.State, Account.Country
+
+    END IF
+        RETURN None
+ 
+
+END FUNCTION 
+
+
+
+FUNCTION getContact(input contactId, accessToken)
+
+    Call Api to getContacts from https://www.zohoapis.com/crm/v2/Contacts/contactId
+
+    IF response of status equal to 200 THEN
+        RETURN response.accountId and response.zohoTags
+    END IF
+
+        RETURN None
+
+END FUNCTION
+
+FUNCTION getIndustry(accountId, zohoAccessToken):
+    DEFINE responseData
+
+    Call Api to getIndustry from  = "https://www.zohoapis.com/crm/v2/Accounts/" + accountId
+    SET responseData as response of above API
+
+    IF responseData.status_code == 200 THEN
+        RETURN responseData
+    END IF
+        RETURN None
+
+END FUNCTION
+
+Step 3
+FUNCTION fetchIndustryData(input contactid,Mailchimpstatus, Account,FormatedData)
+
+    DEFINE AccessToken
+    DEFINE Payload
+    DEFINE AccountData
+
+        SET AccessToken = Account.getZohoAccessToken
+        SET Payload = Call getContact(contactid,accessToken)
+        SET AccountData= Call getIndustry(Payload.accountId, AccessToken)
+
+        IF Payload.accountId is not None THEN
+
+            RETURN AccountData.Industry , AccountData.Practice, Payload.zohoTags,   AccountData.Business_Type_New_Markets,formatedData ...Etc.
+    
+        END IF
+            RETURN None
+
+
+END FUNCTION
+
+FUNCTION userIsExistInMailChimps(input hashedEmail)
+
+ DEFINE result
+
+ CALL to MailChimp Api from https://us8.api.mailchimp.com/3.0/lists/c03a172480/members/hashEmail 
+ SET result of above response
+
+ IF result.id is not null THEN
+    RETURN TRUE
+ END IF
+    RETURN NONE
+
+END FUNCTION
+
+Step 4
+FUNCTION AddCreateContactsToMailChimp (input userData )λ
+
+    DEFINE hashEmail
+    DEFINE isExist
+    DEFINE objPayload
+    
+
+    DEFINE Industry  = userData.Industry
+    DEFINE fname = userData.formatedData.fname
+    DEFINE lname = userData.formatedData.lname
+    DEFINE phone = userData.formatedData.phone
+    DEFIEN address = userData.formatedData.address
+    DEFIEN mail = userData.formatedData.mail
+    DEFIEN zipCode = userData.formatedData.zipCode
+    DEFINE street  = userData.formatedData.street
+    DEFINE city = userData.formatedData.city
+    DEFINE state = userData.formatedData.state
+                                            ................#ETC
+                                            
+    SET hashEmail=createhashedMail(userData.mail)
+
+    ADD objPayload into Industry,fname,lname,phone,address,mail,zipCode,street,city,state
+
+    CALL userIsExistInMailChimps(hashEmail)
+    AND SET isExist
+
+    IF isExist is TRUE THEN
+
+        CALL to MailChimp Api from https://www.zohoapis.com/crm/v2/Accounts/
+            to   Insert objPayload
+
+        IF response of above API, status is 200 THEN
+            RETURN TRUE
+        ELSE
+            RETURN FALSE
+        END IF
+
+    ELSE
+
+        CALL to MailChimp Api from https://us8.api.mailchimp.com/3.0/lists/c03a172480/members/hashEmail 
+            to   Update above defined userData 
+
+        IF response of above API, status is 200 THEN
+            RETURN TRUE
+        ELSE
+            RETURN FALSE
+        END IF
+
+    END IF
+
+END FUNCTION
+
+FUNCTION createhashedMail (input mail)
+
+    RETURN Create a md5 hashvalue from mail
+
+END FUNCTION
+
+Step 5
+FUNCTION FetchMailchimpsTags (hashedEmail,zohoTag)
+
+    DEFINE PayloadObj
+    DEFINE createTag
+
+    IF zohoTag is not undefined and Not null THEN
+
+        FOR i to To length of zohoTag
+
+            SET PayloadObj to zohoTag ith element and add new status as active 
+
+        END FOR
+    END IF
+
+    IF Size of PayloadObj > 0 THEN
+
+    CALL api to fetch from "https://us8.api.mailchimp.com/3.0/lists/c03a172480/members/" + hashedEmail + "/tags" 
+    SET tagsResponse as response of previous api
+
+    END IF 
+
+    IF tagsResponse.status is 200 THEN
+        RETURN tagsResponse as List
+    ELSE 
+        RETURN NONE
+    END IF 
+
+END FUNCTION 
+
+Step 6
+FUNCTION RemoveExcessTags (hashedmail, tagnames, tagids, zohotagnames)λ
+    DEFINE List1, List2
+    DEFINE ListDiffer
+    DEFINE Array tags
+    DEFINE tagIdAndtagName
+
+        SET List1 = tagnames
+        SET List2 = zohotagnames
+        SET tagIdAndtagName values of tagids,tagnames
+
+        FOR i to Length List1
+            IF i not not in List2
+                ADD ListDiffer to i
+        END FOR
+        
+        FOR i to Length ListDiffer
+            ADD value into tags  ith value of tagIdAndtagName
+            ADD value into tags  ith value of i
+            ADD value into tags  status as inactive
+        END FOR        
+
+    IF Size of ListDiffer > 0 THEN 
+
+    CALL MailChimps API From https://us8.api.mailchimp.com/3.0/lists/c03a172480/members/"+subscriber_hash+"/tags
+     to update data Pass ListDiffer
+
+    END IF 
+            
+    #Deletesuccess=204
+    IF mailchimps status code 204 THEN
+        RETURN TRUE
+
+    ELSE
+        RETURN FALSE
+    END IF
+
+END FUNCTION
+
+
+ 
