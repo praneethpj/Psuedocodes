@@ -27,15 +27,17 @@ CALL ZohoAccountLogin(sample@gmail.com) AND SET Account
 
             IF (UserData.length>0) THEN
 
-                CALL AddCreateContactsToMailChimp(UserData) AND SET ZohoTag
-            
+                
+                CALL AddCreateContactsToMailChimp(UserData)
+                SET ZohoTag = UserData.zohoTags
                 IF (ZohoTag.length>0) THEN
 
+                
                     CALL FetchMailchimpsTags(ZohoTag) AND SET TagsResponse
 
                     IF(TagsResponse.length>0) THEN
                         
-                        CALL RemoveExcessTags(hashedmail,tagsResponse.tagnames,tagsResponse.tagids,zohoTag) 
+                        CALL RemoveExcessTags(hashedmail,TagsResponse.tagnames,tagsResponse.tagids,zohoTag) 
 
                     ELSE 
 
@@ -68,7 +70,7 @@ Call ZohoAccount Api Logn
     
     Get current API login config
     Process Login
-    
+
     IF ZohoAccount Login success THEN
         RETURN Account
     ELSE 
